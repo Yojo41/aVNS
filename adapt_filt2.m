@@ -22,32 +22,38 @@ for j= 0:length(insp)
         segment =1:insp(1);    
         %
         Fpass1 = meanF-0.1; 
-        Fstop1 = meanF; 
-        Fstop2 = meanF+0.1; 
-        Fpass2 = meanF+0.2; 
+        Fstop1 = meanF-0.05; 
+        Fstop2 = meanF+0.05; 
+        Fpass2 = meanF+0.1; 
     %% LAST INTERVAL
     elseif j == length(insp)
         segment =insp(end):length(tsignal); 
         %
         Fpass1 = meanF-0.1; 
-        Fstop1 = meanF; 
-        Fstop2 = meanF+0.1; 
-        Fpass2 = meanF+0.2; 
+        Fstop1 = meanF-0.05; 
+        Fstop2 = meanF+0.05; 
+        Fpass2 = meanF+0.1; 
     %% IN BETWEEN 
     else
         segment = insp(j):insp(j+1); 
         
         tresp= tsignal(segment(end)) - tsignal(segment(1));
         fresp= 1/tresp;
-
-        Fpass1 = fresp/2; 
-        Fstop1 = fresp; 
-        Fstop2 = fresp+0.1; 
-        Fpass2 = fresp+0.2; 
+        if fresp > 0.1 && fresp < 1.4
+        Fpass1 = fresp-0.1; 
+        Fstop1 = fresp-0.05; 
+        Fstop2 = fresp+0.05; 
+        Fpass2 = fresp+0.1; 
+        else
+        Fpass1 = meanF-0.1; 
+        Fstop1 = meanF-0.05; 
+        Fstop2 = meanF+0.05; 
+        Fpass2 = meanF+0.1; 
+        end 
     end 
-    
+    %% FILTER DESIGN 
     d = designfilt('bandstopfir', ...
-    'FilterOrder',20,...
+    'FilterOrder',30,...
     'PassbandFrequency1',Fpass1,...
     'StopbandFrequency1',Fstop1, ...
     'StopbandFrequency2',Fstop2,...

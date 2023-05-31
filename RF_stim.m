@@ -1,4 +1,4 @@
-function [start_stim,start_loc,end_loc] = RF_stim(stim,Fs,pltflag)
+function result = RF_stim(stim,ECG,rpeaks,t_signal,Fs,pltflag)
 
 avg_stim = mean(stim);
 std_stim = std(stim);
@@ -20,11 +20,18 @@ end
 [~,end_loc] = findpeaks(-win_stim);
 start_stim = (start_loc-1)'/Fs;
 
+result.beg = start_loc; 
+result.end = end_loc; 
+%% PLOT 
+% random range 
+a = t_signal(randperm(length(t_signal),1));
+b = a + 5; 
+
 if pltflag == 1
     ax(1) = subplot(3,1,1); 
     plot(t_signal,ECG)
     hold on
-    plot(t_rpeaks,ECG(rpeaks),'r*')
+    plot(t_signal(rpeaks),ECG(rpeaks),'r*')
     legend(['ECG signal','r peaks'])
     ax(2) = subplot(3,1,2); 
     plot(t_signal,stim)
@@ -33,7 +40,8 @@ if pltflag == 1
     plot(t_signal,win_stim,'k','LineWidth',1)
     hold on
     plot(start_stim,ones(length(start_stim),1),'g*')
-    plot(t_rpeaks,ones(length(rpeaks),1),'r*')
+    plot(t_signal(rpeaks),ones(length(rpeaks),1),'r*')
     legend('window func','start stim','r peak ECG')
     linkaxes(ax,'x')
+    xlim(ax,[a b])
 end 

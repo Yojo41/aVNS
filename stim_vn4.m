@@ -1,18 +1,25 @@
-%TODO: Improve protocol detection
-%TODO: Adaptive Filtering
-%% choose patient and protocoll 
-for k = 1
+%TODO: Revisit the Code, Simplify things, overthink every concept, improve
+%runtime
+%TODO: Improve inspiration/expiration detection
+%Further Ideas: Include Blood Pressure into concideration. (Baroreceptor) 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                         %
+%                     choose patient and protocoll                        %
+%                                                                         %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+clear all
+for k =3
 close all; clc; 
 id1 = ['ID1';'ID2';'ID3';'ID4';'ID5'];
 cd(id1(k,:))
-clear variables
 y = load("protocol_3_2.mat"); 
-%% initial values 
+% initial values 
 resp=y.data(:,1); 
+ECG=y.data(:,2); 
 bloodp=y.data(:,3); 
-stim = y.data(:,4);
+Rstim = y.data(:,4);
 RR =y.data(:,5); 
-%% Convert x-axis to time in sec
+% Convert x-axis to time in sec
 Fs=1000; %Sample rate in Hz
 L=length(y.data(:,2)); 
 t_signal = ((0:L-1)/Fs)';%time vector 
@@ -22,51 +29,40 @@ t_signal = ((0:L-1)/Fs)';%time vector
 %                                                                         %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 cd("/Users/jt/Library/Mobile Documents/com~apple~CloudDocs/Documents/TUW/M. Sc. 3 Semester/Project Signals&Instrumentation /analyze_ecg")
-%detect r peaks 
-[rpeaks,~,~] = analyze_ecg_offline_r(y.data(:,2), Fs);  
-t_Rpeaks= t_signal(rpeaks);
-%% find rising flank of stimulus
+[rpeaks,~,~] = analyze_ecg_offline_r(ECG, Fs);  
+% find rising flank of stimulus
 cd("/Users/jt/Library/Mobile Documents/com~apple~CloudDocs/Documents/TUW/M. Sc. 3 Semester/Project Signals&Instrumentation ")
-[start_stim,stim_loc,end_loc] = RF_stim(stim,Fs,0);
+stim = RF_stim(Rstim,ECG,rpeaks,t_signal,Fs,1);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                         %
-%                       Categorize the input protocoll                    %
+%                   Categorize stimulation protocoll                      %
 %                                                                         %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-diff1 = find((diff(end_loc) <= 20) == 1); 
-diff2 = find((gradient(end_loc) >= 2000) == 1); 
-sort1  = sort([1, end_loc(diff1), end_loc(diff2),length(t_signal)]);
-for i=1:length(sort1)-1
-    c(i,1) = (sort1(i+1) - sort1(i)) >= 150000; 
-end
-d = find(c == 1); 
-edges = [1,sort1(d+1)];  
-
+%automatic detection of stimulation protocol change
+[~,loc] = findpeaks(abs(gradient(stim.beg)-1000),'MinPeakDistance',300,'MinPeakHeight',900); 
+edges = [1,stim.beg(loc),length(Rstim)]; 
+  
 % Mark the data 
-cflag(edges(1):max(edges),1) = "Non-sync aVNS"; 
-cflag(edges(2):edges(3),1) = "Systole-sync aVNS";
-cflag(edges(4):edges(5),1) = "Diastole-sync aVNS"; 
-stim_flag = cflag(stim_loc);
-
-dflag(edges(1):max(edges),1) = 1; 
-dflag(edges(2):edges(3),1) = 2;
-dflag(edges(4):edges(5),1) = 3; 
 stimstr = ["Non-sync aVNS", "Systole-sync aVNS", "Diastole-sync aVNS"]; 
+sflag(edges(1):max(edges),1) = 1; 
+sflag(edges(2):edges(3),1) = 2;
+sflag(edges(4):edges(5),1) = 3; 
+stim_flag = sflag(stim.beg);
 
-[stim_RR,stim_alpha,stim_flag,stim_tR] =initRR(stim_loc, rpeaks,t_signal,stim_flag); 
+[stim_RR,stim_alpha,stim_flag,stim_tR] =initRR(stim.beg, rpeaks,t_signal,stim_flag); 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                         %
 %                       Normalize ECG and histogram                       %
 %                                                                         %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-nflag = zeros(length(dflag),1); 
-nflag(stim_loc) = 1; 
+nflag = zeros(length(sflag),1); 
+nflag(stim.beg) = 1; 
 x1 = linspace(0,1,length(rpeaks)); 
 %
 for j = 1:length(rpeaks)-1
 % split ECG signal and flag from R to R peak 
 segment= rpeaks(j):rpeaks(j+1); 
-splitECG{j,:} = [y.data(segment,2),nflag(segment),dflag(segment)];
+splitECG{j,:} = [y.data(segment,2),nflag(segment),sflag(segment)];
 %find stimulation point in splitted ECG signal 
 splitECG_stimloc{j,1} = find(splitECG{j,1}(:,2) == 1,1,'last'); 
 label{j,1} = splitECG{j,1}(splitECG_stimloc{j,1},3); 
@@ -84,21 +80,46 @@ prc = prctile(splitECG_res,[25 75],1);
 %                Classification Inspiration / Expiration                  %
 %                                                                         %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-% Savitzky-Golay filter
-SG_resp = sgolayfilt(resp,1,Fs+1);
-%
-[seg,~,~] = cyclesAdvance(Fs, SG_resp,[]); %,'plot');  
+
+% Moving Average Filter
+windowSize = 1.5*Fs; 
+b = (1/windowSize)*ones(1,windowSize);
+a = 1; 
+maf = filtfilt(b,a,resp);
+dmaf = gradient(maf); 
+% window function inspiration/ expiration 
+for i=1:length(maf)
+    if dmaf(i)<= 0 
+        wresp(i)=-1;
+    elseif dmaf(i)> 0
+        wresp(i)=1; 
+    else 
+        wresp(i) = wresp(i-1); 
+    end 
+end 
+[~,seg.begIn] = findpeaks(wresp); 
+[~,seg.begEx] = findpeaks(-wresp); 
+
 % Ensure same number of Insp/ Exp. 
 if length(seg.begEx) > length(seg.begIn)
     seg.begEx(end) = []; 
 elseif length(seg.begIn) > length(seg.begEx)
     seg.begIn(end) = []; 
 end 
-%
+% Assign label 
 resp_flag(1:length(seg.begEx),1) = "Expiration"; 
 resp_flag(length(seg.begEx)+1:2*length(seg.begEx),1)= "Inspiration"; 
 [start_InEx,I] = sort([seg.begEx, seg.begIn]); 
 resp_flag = resp_flag(I); 
+    
+%PLOT 
+figure()
+plot(t_signal,resp,'DisplayName','Raw')
+hold on
+plot(t_signal,maf,'DisplayName','Moving Average')
+plot(t_signal(seg.begIn),maf(seg.begIn),'g*','DisplayName','Inspiration')
+plot(t_signal(seg.begEx),maf(seg.begEx),'r*','DisplayName','Expiration')
+legend show
 
 [resp_RR,resp_alpha,resp_flag,resp_tR] = initRR(start_InEx, rpeaks,t_signal,resp_flag); 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -115,13 +136,14 @@ q= 3;%Hz
 %                           Adaptive Filter                               %
 %                                                                         %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-testRR = interp1(stim_tR(:,2),stim_RR{1,1},t_signal,'linear');
-res= adapt_filt2(seg.begIn,t_signal,testRR,meanF,1); 
-%test function 
-% x = exp(-2*t').*chirp(t',2,1,28,'quadratic');
-% figure
-
-% RdR_fit(stim_alpha, af_RR, stim_flag,1,60,1)
+for kk = 1:5 
+af_respRRi = interp1(resp_tR(:,2),resp_RR{kk,1},t_signal,'linear');
+af_stimRRi = interp1(stim_tR(:,2),stim_RR{kk,1},t_signal,'linear');
+resp_res= adapt_filt2(seg.begIn,t_signal,af_respRRi,meanF,0); 
+stim_res= adapt_filt2(seg.begIn,t_signal,af_stimRRi,meanF,1); 
+af_respRR{kk,1} = interp1(t_signal,resp_res,resp_tR(:,2),'linear','extrap');
+af_stimRR{kk,1} = interp1(t_signal,stim_res,stim_tR(:,2),'linear','extrap');
+end 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                         %
 %                                OUTPUT                                   %
@@ -129,13 +151,20 @@ res= adapt_filt2(seg.begIn,t_signal,testRR,meanF,1);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %(1.) OUTPUT - Data Overview - 
 output_plot(y,edges,Fs,x1,prc,colMeans,beta,label,stimstr); 
-%(2.) OUTPUT - Respiration -
+%OUTPUT - Respiration -
 RdR_fit(resp_alpha, resp_RR, resp_flag,1,0,1) 
-%(2.) OUTPUT - Filter Respiration
+%OUTPUT - Filter Respiration
 RdR_fit(resp_alpha, filt_respRR, resp_flag,1,0,1) 
-%(4.) OUTPUT - Stimulation -
-RdR_fit(stim_alpha, stim_RR, stim_flag,1,60,1)
+%OUTPUT - Adaptive Filter Respiration
+RdR_fit(resp_alpha, af_respRR,resp_flag,1,0,1)
+%OUTPUT - Stimulation -
+RdR_fit(stim_alpha, stim_RR, stimstr(stim_flag),1,60,1)
 %RdR_fit(stim_alpha, stim_RR, stim_flag,2,60,0)
-%(5.) OUTPUT - Filter Stimulation -
-RdR_fit(stim_alpha, filt_stimRR, stim_flag,1,60,1) 
+%OUTPUT - Filter Stimulation -
+RdR_fit(stim_alpha, filt_stimRR, stimstr(stim_flag),1,60,1) 
+%OUTPUT - Adaptive Filter Stimulation 
+RdR_fit(stim_alpha, af_stimRR, stimstr(stim_flag),1,60,1)
+% SAVE for further investigations 
+save(['Patient',num2str(k),'.mat'],"stim_alpha","stim_RR","stim_flag","af_stimRR")
+clear variables
 end 

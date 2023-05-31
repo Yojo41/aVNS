@@ -26,7 +26,7 @@ if theta > 0
     B = ["Non-sync aVNS", "Systole-sync aVNS", "Diastole-sync aVNS"];
     [~, index] = ismember(groupflag, B);
     [~, s] = sort(index);
-    groupflag = groupflag(s);
+    groupflag = groupflag(s)';
     alpha = alpha(s); 
     for k = 1:5 
     RR{k,:} = RR{k,:}(s); 
@@ -71,6 +71,7 @@ for k = 1:4
     s = scatterhist(alpha,((RR{k+1,:} ./ RR{1,:}) -1 )* 100,'NBins',[30 20], ...
         'Color','kbr', 'LineStyle',{'-','-.',':'},'Marker','+od','Style','bar', ...
         'Parent',hp{k},'Group',groupflag,'Direction','in');
+    pdca = fitdist(((RR{k+1,:}(g) ./ RR{1,:}(g)) -1 )* 100,'Kernel','By',g,'Width',3); 
     for j=1:length(unique(g))
     cla(s(2))
     cla(s(3))
@@ -78,9 +79,14 @@ for k = 1:4
     hold(s(3),'on')
     arrayfun(@(j)histogram(s(2),alpha(g==j),'BinWidth',11.7,'FaceColor',...
         colorstr(j),'Normalization','probability'),unique(g))
-    arrayfun(@(j)histogram(s(3),((RR{k+1,:}(g==j) ./ RR{1,:}(g==j)) -1 )* 100,...
-        'BinWidth',2,'FaceColor',colorstr(j),'Normalization','probability'),unique(g))
+    x2 = -30:1:30; 
+    arrayfun(@(j) plot(s(3),x2,pdf(pdca{1,j},x2),'Color',colorstr(j)),unique(g))
     end 
+    camroll(s(3),180)
+    
+%    arrayfun(@(j)fitdist(s(3),((RR{k+1,:}(g==j) ./ RR{1,:}(g==j)) -1 )* 100,...
+%        'kernel'),unique(g)); 
+%   end
     axis(s(2:3),'tight')
     axis(s(2:3),'on')
     set(s(2:3),'xtick',[],'Xcolor','w','box','off')    
